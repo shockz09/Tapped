@@ -88,6 +88,26 @@ This ensures counts always converge correctly regardless of sync order or timing
 - **Local**: `~/Library/Application Support/TypingStats/`
 - **iCloud**: `NSUbiquitousKeyValueStore` (automatic, up to 1MB)
 
+## Project Structure
+
+```
+Sources/TypingStats/
+├── TypingStatsApp.swift      # App entry point & menu
+├── Core/
+│   ├── KeystrokeMonitor.swift    # CGEventTap wrapper
+│   ├── PermissionManager.swift   # Accessibility permissions
+│   └── StatusItemManager.swift   # Menubar icon + count
+├── Data/
+│   ├── GCounter.swift            # CRDT implementation
+│   ├── DailyStats.swift          # Daily record model
+│   ├── DeviceID.swift            # Hardware UUID
+│   ├── LocalStore.swift          # JSON persistence
+│   ├── iCloudSync.swift          # iCloud key-value store
+│   └── StatsRepository.swift     # Data coordinator
+└── UI/
+    └── HistoryWindow.swift       # History view
+```
+
 ## Privacy
 
 Tapped:
