@@ -1,5 +1,6 @@
 import Cocoa
 import Combine
+import os
 
 /// Monitors global keystrokes using CGEventTap
 final class KeystrokeMonitor: ObservableObject {
@@ -17,14 +18,21 @@ final class KeystrokeMonitor: ObservableObject {
         123, 124, 125, 126  // arrows: left, right, down, up
     ]
 
-    // Word counting state - true means last key was a separator (or start of session)
+    // Word counting state
     private var lastWasSeparator = true
+
+    // Pending counts (accumulated on callback thread, flushed periodically)
+    private var pendingKeystrokes: UInt64 = 0
+    private var pendingWords: UInt64 = 0
+
+    // Fast lock for callback thread
+    private var lock = os_unfair_lock()
 
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var runLoopThread: Thread?
     private var backgroundRunLoop: CFRunLoop?
-    private let lock = NSLock()
+    private var flushTimer: Timer?
 
     deinit {
         stop()
@@ -32,8 +40,8 @@ final class KeystrokeMonitor: ObservableObject {
 
     /// Start monitoring keystrokes
     func start() {
-        lock.lock()
-        defer { lock.unlock() }
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
 
         guard eventTap == nil else { return }
 
@@ -60,20 +68,16 @@ final class KeystrokeMonitor: ObservableObject {
                     let isIgnored = KeystrokeMonitor.ignoredKeys.contains(keycode)
                     let isSeparator = KeystrokeMonitor.wordSeparators.contains(keycode)
 
-                    // Thread-safe state check and update
-                    monitor.lock.lock()
-                    let shouldCountWord = !isIgnored && !isSeparator && monitor.lastWasSeparator
+                    // Thread-safe accumulate (no main queue dispatch per key!)
+                    os_unfair_lock_lock(&monitor.lock)
+                    monitor.pendingKeystrokes += 1
+                    if !isIgnored && !isSeparator && monitor.lastWasSeparator {
+                        monitor.pendingWords += 1
+                    }
                     if !isIgnored {
                         monitor.lastWasSeparator = isSeparator
                     }
-                    monitor.lock.unlock()
-
-                    DispatchQueue.main.async {
-                        monitor.keystrokeCount += 1
-                        if shouldCountWord {
-                            monitor.wordCount += 1
-                        }
-                    }
+                    os_unfair_lock_unlock(&monitor.lock)
                 }
 
                 // Handle tap being disabled by system
@@ -101,9 +105,9 @@ final class KeystrokeMonitor: ObservableObject {
             guard let self = self, let source = self.runLoopSource else { return }
 
             let runLoop = CFRunLoopGetCurrent()
-            self.lock.lock()
+            os_unfair_lock_lock(&self.lock)
             self.backgroundRunLoop = runLoop
-            self.lock.unlock()
+            os_unfair_lock_unlock(&self.lock)
 
             CFRunLoopAddSource(runLoop, source, .commonModes)
             CGEvent.tapEnable(tap: eventTap, enable: true)
@@ -114,15 +118,41 @@ final class KeystrokeMonitor: ObservableObject {
         runLoopThread?.name = "KeystrokeMonitor"
         runLoopThread?.start()
 
+        // Start flush timer on main queue (100ms interval)
         DispatchQueue.main.async {
             self.isRunning = true
+            self.flushTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                self?.flushPendingCounts()
+            }
+        }
+    }
+
+    /// Flush accumulated counts to published properties
+    private func flushPendingCounts() {
+        os_unfair_lock_lock(&lock)
+        let keys = pendingKeystrokes
+        let words = pendingWords
+        pendingKeystrokes = 0
+        pendingWords = 0
+        os_unfair_lock_unlock(&lock)
+
+        if keys > 0 || words > 0 {
+            keystrokeCount += keys
+            wordCount += words
         }
     }
 
     /// Stop monitoring keystrokes
     func stop() {
-        lock.lock()
-        defer { lock.unlock() }
+        // Stop timer first
+        flushTimer?.invalidate()
+        flushTimer = nil
+
+        // Flush any remaining counts
+        flushPendingCounts()
+
+        os_unfair_lock_lock(&lock)
+        defer { os_unfair_lock_unlock(&lock) }
 
         guard let eventTap = eventTap else { return }
 
@@ -146,5 +176,4 @@ final class KeystrokeMonitor: ObservableObject {
             self.isRunning = false
         }
     }
-
 }
