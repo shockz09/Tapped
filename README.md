@@ -107,6 +107,12 @@ TypingStats:
 - Has no analytics, telemetry, or network calls (except iCloud sync)
 - Is fully open source for you to audit
 
+## Inspiration
+
+I saw [@rauchg](https://github.com/rauchg) (Vercel's CEO)'s [tweet about this tool he made to count keystrokes per day](https://x.com/rauchg/status/2004621125129830729). I loved the idea and wanted to use it myself, but it wasn't available to install and wasn't open source, so I decided to build it and ship it myself.
+
+I would love if people use this and find bugs or add features they would want to use in this!
+
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
