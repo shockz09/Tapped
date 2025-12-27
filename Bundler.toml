@@ -1,0 +1,10 @@
+[apps.TypingStats]
+product = "TypingStats"
+identifier = "com.shockz.typingstats"
+version = "1.0.0"
+category = "public.app-category.productivity"
+minimum-macos-version = "13.0"
+
+[apps.TypingStats.info-plist-entries]
+LSUIElement = true
+NSAccessibilityUsageDescription = "Typing Stats needs Accessibility access to count keystrokes across all applications."

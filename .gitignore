@@ -1,0 +1,12 @@
+.DS_Store
+/.build
+/Packages
+xcuserdata/
+DerivedData/
+.swiftpm/
+*.xcodeproj
+*.xcworkspace
+.netrc
+
+# App bundle (built locally)
+TypingStats.app/Contents/MacOS/TypingStats
