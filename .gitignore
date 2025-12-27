@@ -10,3 +10,6 @@ DerivedData/
 
 # App bundle (built locally)
 TypingStats.app/Contents/MacOS/TypingStats
+
+# Release artifacts
+*.zip

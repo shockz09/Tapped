@@ -22,9 +22,12 @@ A minimal macOS menubar app that tracks your daily keystrokes with iCloud sync a
 
 ## Installation
 
-### Download
+### Download (Recommended)
 
-Download the latest release from the [Releases](../../releases) page.
+1. Download `TypingStats-v1.0.0.zip` from the [Releases](../../releases) page
+2. Unzip and drag `TypingStats.app` to your Applications folder
+3. **First launch**: Right-click the app → "Open" (required to bypass Gatekeeper since the app is not signed)
+4. Grant Accessibility permission when prompted
 
 ### Build from Source
 
@@ -37,18 +40,11 @@ Requirements:
 git clone https://github.com/YOUR_USERNAME/TypingStats.git
 cd TypingStats
 
-# Build
+# Build release version
 swift build -c release
 
-# Copy to Applications (optional)
-cp -r .build/release/TypingStats /Applications/
-```
-
-Or use the included app bundle:
-
-```bash
-swift build
-cp .build/debug/TypingStats TypingStats.app/Contents/MacOS/
+# Copy binary to app bundle and run
+cp .build/release/TypingStats TypingStats.app/Contents/MacOS/
 open TypingStats.app
 ```
 
