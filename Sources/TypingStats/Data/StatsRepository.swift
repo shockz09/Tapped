@@ -24,7 +24,12 @@ final class StatsRepository: ObservableObject {
     init() {
         loadInitialData()
         setupSyncObserver()
-        // Defer keystroke monitoring setup
+    }
+
+    deinit {
+        saveTask?.cancel()
+        keystrokeMonitor?.stop()
+        forceSave()
     }
 
     /// Set up keystroke monitoring with permission check

@@ -9,20 +9,28 @@ final class KeystrokeMonitor: ObservableObject {
     private var eventTap: CFMachPort?
     private var runLoopSource: CFRunLoopSource?
     private var runLoopThread: Thread?
+    private var backgroundRunLoop: CFRunLoop?
+    private let lock = NSLock()
+
+    deinit {
+        stop()
+    }
 
     /// Start monitoring keystrokes
     func start() {
+        lock.lock()
+        defer { lock.unlock() }
+
         guard eventTap == nil else { return }
 
         // Event mask for keyDown events only
         let eventMask: CGEventMask = (1 << CGEventType.keyDown.rawValue)
 
         // Create the event tap
-        // Note: We use a static callback because CGEventTapCallBack is a C function pointer
         eventTap = CGEvent.tapCreate(
             tap: .cgSessionEventTap,
             place: .headInsertEventTap,
-            options: .listenOnly,  // Don't intercept, just observe
+            options: .listenOnly,
             eventsOfInterest: eventMask,
             callback: { (proxy, type, event, refcon) -> Unmanaged<CGEvent>? in
                 guard let refcon = refcon else {
@@ -62,6 +70,10 @@ final class KeystrokeMonitor: ObservableObject {
             guard let self = self, let source = self.runLoopSource else { return }
 
             let runLoop = CFRunLoopGetCurrent()
+            self.lock.lock()
+            self.backgroundRunLoop = runLoop
+            self.lock.unlock()
+
             CFRunLoopAddSource(runLoop, source, .commonModes)
             CGEvent.tapEnable(tap: eventTap, enable: true)
 
@@ -78,38 +90,51 @@ final class KeystrokeMonitor: ObservableObject {
 
     /// Stop monitoring keystrokes
     func stop() {
+        lock.lock()
+        defer { lock.unlock() }
+
         guard let eventTap = eventTap else { return }
 
         CGEvent.tapEnable(tap: eventTap, enable: false)
 
-        if let runLoopSource = runLoopSource {
-            // Stop the run loop on the background thread
-            if let thread = runLoopThread {
-                CFRunLoopStop(CFRunLoopGetMain()) // This won't work as expected
-                thread.cancel()
-            }
+        // Stop the background run loop
+        if let runLoop = backgroundRunLoop {
+            CFRunLoopStop(runLoop)
+        }
+
+        if let thread = runLoopThread, !thread.isCancelled {
+            thread.cancel()
         }
 
         self.eventTap = nil
         self.runLoopSource = nil
         self.runLoopThread = nil
+        self.backgroundRunLoop = nil
 
         DispatchQueue.main.async {
             self.isRunning = false
         }
     }
 
-    /// Reset the keystroke count (for testing)
+    /// Reset the keystroke count
     func reset() {
         DispatchQueue.main.async {
             self.keystrokeCount = 0
         }
     }
 
-    /// Get and reset the count (for batched recording)
+    /// Thread-safe consume count
     func consumeCount() -> UInt64 {
-        let count = keystrokeCount
-        keystrokeCount = 0
+        var count: UInt64 = 0
+        if Thread.isMainThread {
+            count = keystrokeCount
+            keystrokeCount = 0
+        } else {
+            DispatchQueue.main.sync {
+                count = self.keystrokeCount
+                self.keystrokeCount = 0
+            }
+        }
         return count
     }
 }

@@ -8,9 +8,11 @@ struct GCounter: Codable, Equatable {
 
     init() {}
 
-    /// Increment the counter for a specific device
+    /// Increment the counter for a specific device (overflow-safe)
     mutating func increment(deviceID: String, by amount: UInt64 = 1) {
-        counts[deviceID, default: 0] += amount
+        let current = counts[deviceID, default: 0]
+        let (result, overflow) = current.addingReportingOverflow(amount)
+        counts[deviceID] = overflow ? UInt64.max : result
     }
 
     /// Get the count for a specific device
@@ -18,9 +20,12 @@ struct GCounter: Codable, Equatable {
         counts[deviceID] ?? 0
     }
 
-    /// Total count across all devices
+    /// Total count across all devices (overflow-safe)
     var total: UInt64 {
-        counts.values.reduce(0, +)
+        counts.values.reduce(UInt64(0)) { sum, count in
+            let (result, overflow) = sum.addingReportingOverflow(count)
+            return overflow ? UInt64.max : result
+        }
     }
 
     /// Merge with another G-Counter (CRDT merge: max per device)

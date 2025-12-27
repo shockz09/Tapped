@@ -59,34 +59,49 @@ struct HistoryView: View {
     }
 }
 
-class HistoryWindowController {
+final class HistoryWindowController {
     private var window: NSWindow?
+    private var hostingController: NSHostingController<HistoryView>?
 
     func show(stats: [DailyStats]) {
+        // Update existing window if open
         if let existingWindow = window {
+            hostingController?.rootView = HistoryView(stats: stats)
             existingWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
+        // Create new window
         let historyView = HistoryView(stats: stats)
-        let hostingController = NSHostingController(rootView: historyView)
+        let hosting = NSHostingController(rootView: historyView)
+        hostingController = hosting
 
-        let window = NSWindow(contentViewController: hostingController)
-        window.title = "Typing Stats History"
-        window.styleMask = [.titled, .closable, .miniaturizable]
-        window.setContentSize(NSSize(width: 350, height: 400))
-        window.center()
-        window.isReleasedWhenClosed = false
+        let newWindow = NSWindow(contentViewController: hosting)
+        newWindow.title = "Typing Stats History"
+        newWindow.styleMask = [.titled, .closable, .miniaturizable]
+        newWindow.setContentSize(NSSize(width: 350, height: 400))
+        newWindow.center()
+        newWindow.isReleasedWhenClosed = false
 
-        self.window = window
+        // Clear references when window closes
+        NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: newWindow,
+            queue: .main
+        ) { [weak self] _ in
+            self?.window = nil
+            self?.hostingController = nil
+        }
 
-        window.makeKeyAndOrderFront(nil)
+        window = newWindow
+        newWindow.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func close() {
         window?.close()
         window = nil
+        hostingController = nil
     }
 }

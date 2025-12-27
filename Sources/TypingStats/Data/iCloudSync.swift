@@ -1,22 +1,34 @@
 import Foundation
+import os.log
 
 /// Handles iCloud sync via NSUbiquitousKeyValueStore
 final class iCloudSync {
     private let store = NSUbiquitousKeyValueStore.default
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
+    private let logger = Logger(subsystem: "TypingStats", category: "iCloudSync")
 
     private let keyPrefix = "stats_"
+    private var changeObserver: NSObjectProtocol?
 
     init() {
         // Force initial sync
         store.synchronize()
     }
 
+    deinit {
+        if let observer = changeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
     /// Save stats to iCloud
     func save(_ stats: DailyStats) {
         guard let data = try? encoder.encode(stats),
-              let json = String(data: data, encoding: .utf8) else { return }
+              let json = String(data: data, encoding: .utf8) else {
+            logger.error("Failed to encode stats for iCloud sync")
+            return
+        }
 
         store.set(json, forKey: keyPrefix + stats.id)
         store.synchronize()
@@ -29,6 +41,13 @@ final class iCloudSync {
               let stats = try? decoder.decode(DailyStats.self, from: data) else {
             return nil
         }
+
+        // Basic validation
+        guard stats.id == dateID else {
+            logger.warning("Invalid stats data for \(dateID): ID mismatch")
+            return nil
+        }
+
         return stats
     }
 
@@ -47,7 +66,12 @@ final class iCloudSync {
 
     /// Observe external changes from other devices
     func observeChanges(handler: @escaping ([DailyStats]) -> Void) {
-        NotificationCenter.default.addObserver(
+        // Remove existing observer if any
+        if let observer = changeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+
+        changeObserver = NotificationCenter.default.addObserver(
             forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
             object: store,
             queue: .main
