@@ -62,6 +62,13 @@ struct HistoryView: View {
 final class HistoryWindowController {
     private var window: NSWindow?
     private var hostingController: NSHostingController<HistoryView>?
+    private var closeObserver: NSObjectProtocol?
+
+    deinit {
+        if let observer = closeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
 
     func show(stats: [DailyStats]) {
         // Update existing window if open
@@ -84,8 +91,13 @@ final class HistoryWindowController {
         newWindow.center()
         newWindow.isReleasedWhenClosed = false
 
-        // Clear references when window closes
-        NotificationCenter.default.addObserver(
+        // Clear old observer if any
+        if let observer = closeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+
+        // Track window close to clear references
+        closeObserver = NotificationCenter.default.addObserver(
             forName: NSWindow.willCloseNotification,
             object: newWindow,
             queue: .main
@@ -100,6 +112,10 @@ final class HistoryWindowController {
     }
 
     func close() {
+        if let observer = closeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            closeObserver = nil
+        }
         window?.close()
         window = nil
         hostingController = nil
