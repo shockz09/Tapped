@@ -1,55 +1,141 @@
 import SwiftUI
+import Charts
+
+enum TimeRange: String, CaseIterable {
+    case week = "7 days"
+    case month = "30 days"
+    case twoMonths = "60 days"
+
+    var days: Int {
+        switch self {
+        case .week: return 7
+        case .month: return 30
+        case .twoMonths: return 60
+        }
+    }
+}
 
 struct HistoryView: View {
-    let stats: [DailyStats]
+    let allStats: [DailyStats]
+    @State private var selectedRange: TimeRange = .month
+
+    private var filteredStats: [DailyStats] {
+        let cutoffDate = Calendar.current.date(byAdding: .day, value: -selectedRange.days, to: Date()) ?? Date()
+        let cutoffID = DateHelpers.dateID(from: cutoffDate)
+        return allStats.filter { $0.id >= cutoffID }.sorted { $0.id < $1.id }
+    }
+
+    private var chartData: [ChartDataPoint] {
+        // Create data points for all days in range, even if no data
+        var points: [ChartDataPoint] = []
+        for i in (0..<selectedRange.days).reversed() {
+            let dateID = DateHelpers.dateID(daysAgo: i)
+            let count = allStats.first(where: { $0.id == dateID })?.totalKeystrokes ?? 0
+            if let date = DateHelpers.date(from: dateID) {
+                points.append(ChartDataPoint(date: date, count: count, dateID: dateID))
+            }
+        }
+        return points
+    }
+
+    private var listStats: [(dateID: String, count: UInt64)] {
+        // Show all days in selected range, with 0 for missing days
+        (0..<selectedRange.days).map { i in
+            let dateID = DateHelpers.dateID(daysAgo: i)
+            let count = allStats.first(where: { $0.id == dateID })?.totalKeystrokes ?? 0
+            return (dateID: dateID, count: count)
+        }
+    }
+
+    private var maxCount: UInt64 {
+        max(chartData.map(\.count).max() ?? 0, 100)
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            Text("Keystroke History")
-                .font(.headline)
-                .padding()
+        VStack(alignment: .leading, spacing: 0) {
+            // Header with picker
+            HStack {
+                Text("Keystroke History")
+                    .font(.title2)
+                    .fontWeight(.bold)
+
+                Spacer()
+
+                Picker("", selection: $selectedRange) {
+                    ForEach(TimeRange.allCases, id: \.self) { range in
+                        Text(range.rawValue).tag(range)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .frame(width: 220)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+
+            // Chart
+            Chart(chartData) { point in
+                BarMark(
+                    x: .value("Date", point.date, unit: .day),
+                    y: .value("Keystrokes", point.count)
+                )
+                .foregroundStyle(Color.accentColor)
+                .cornerRadius(2)
+            }
+            .chartXAxis {
+                AxisMarks(values: .stride(by: .day, count: xAxisStride)) { value in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
+                        .foregroundStyle(Color.gray.opacity(0.3))
+                    AxisValueLabel(format: .dateTime.month().day())
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .chartYAxis {
+                AxisMarks(position: .trailing) { value in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [2, 2]))
+                        .foregroundStyle(Color.gray.opacity(0.3))
+                    AxisValueLabel()
+                        .foregroundStyle(Color.secondary)
+                }
+            }
+            .chartYScale(domain: 0...Int(maxCount * 11 / 10)) // Add 10% padding
+            .frame(height: 250)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
 
             Divider()
 
-            // Stats list
-            if stats.isEmpty {
-                VStack(spacing: 12) {
-                    Image(systemName: "keyboard")
-                        .font(.system(size: 40))
-                        .foregroundColor(.secondary)
-                    Text("No history yet")
-                        .foregroundColor(.secondary)
+            // List of daily stats
+            List(listStats, id: \.dateID) { item in
+                HStack {
+                    Text(formatFullDate(item.dateID))
+                        .foregroundColor(.primary)
+                    Spacer()
+                    Text(formatNumber(item.count))
+                        .foregroundColor(.primary)
+                        .monospacedDigit()
                 }
-                .frame(maxHeight: .infinity)
-            } else {
-                List(stats) { stat in
-                    HStack {
-                        Text(DateHelpers.displayString(from: stat.id))
-                            .frame(width: 80, alignment: .leading)
-
-                        Spacer()
-
-                        Text(formatNumber(stat.totalKeystrokes))
-                            .monospacedDigit()
-                            .fontWeight(.medium)
-
-                        // Visual bar
-                        GeometryReader { geo in
-                            let maxCount = stats.map(\.totalKeystrokes).max() ?? 1
-                            let width = CGFloat(stat.totalKeystrokes) / CGFloat(maxCount) * geo.size.width
-
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(Color.accentColor.opacity(0.6))
-                                .frame(width: max(width, 2), height: 16)
-                        }
-                        .frame(width: 100)
-                    }
-                    .padding(.vertical, 2)
-                }
+                .padding(.vertical, 2)
             }
+            .listStyle(.plain)
         }
-        .frame(width: 350, height: 400)
+        .frame(width: 550, height: 500)
+        .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    private var xAxisStride: Int {
+        switch selectedRange {
+        case .week: return 1
+        case .month: return 4
+        case .twoMonths: return 8
+        }
+    }
+
+    private func formatFullDate(_ dateID: String) -> String {
+        guard let date = DateHelpers.date(from: dateID) else { return dateID }
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy"
+        return formatter.string(from: date)
     }
 
     private func formatNumber(_ number: UInt64) -> String {
@@ -57,6 +143,13 @@ struct HistoryView: View {
         formatter.numberStyle = .decimal
         return formatter.string(from: NSNumber(value: number)) ?? "\(number)"
     }
+}
+
+struct ChartDataPoint: Identifiable {
+    let id = UUID()
+    let date: Date
+    let count: UInt64
+    let dateID: String
 }
 
 final class HistoryWindowController {
@@ -73,21 +166,21 @@ final class HistoryWindowController {
     func show(stats: [DailyStats]) {
         // Update existing window if open
         if let existingWindow = window {
-            hostingController?.rootView = HistoryView(stats: stats)
+            hostingController?.rootView = HistoryView(allStats: stats)
             existingWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
         // Create new window
-        let historyView = HistoryView(stats: stats)
+        let historyView = HistoryView(allStats: stats)
         let hosting = NSHostingController(rootView: historyView)
         hostingController = hosting
 
         let newWindow = NSWindow(contentViewController: hosting)
         newWindow.title = "Typing Stats History"
         newWindow.styleMask = [.titled, .closable, .miniaturizable]
-        newWindow.setContentSize(NSSize(width: 350, height: 400))
+        newWindow.setContentSize(NSSize(width: 550, height: 500))
         newWindow.center()
         newWindow.isReleasedWhenClosed = false
 
